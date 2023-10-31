@@ -1,0 +1,40 @@
+html {
+  background-color: #1e1e1e;
+  color: #ffffff;
+  display: flex;
+  justify-content: center;
+  font-size: 9rem;
+}
+
+table {
+  width: 501px;
+  height: 501px;
+  border: 1px solid black;
+}
+
+td {
+  text-align: center; 
+  vertical-align: middle;
+  width: 167px;
+  height: 167px;
+  border: 1px solid black;
+  &:hover {
+    cursor: pointer;
+  }
+}
+
+.won {
+  background-color: #00ff00;
+}
+
+.lost {
+  background-color: #ff0000;
+}
+
+.draw {
+  background-color: #0000ff;
+}
+
+.unknown{
+  background-color: #1e1e1e;
+}
