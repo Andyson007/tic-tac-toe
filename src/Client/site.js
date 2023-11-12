@@ -49,9 +49,9 @@ function createTable(body, data) {
       console.log(data[i][j]);
       switch (data[i][j]) {
         case "0": td.classList.add("unknown"); break;
-        case "1": td.classList.add("draw"); break;
-        case "4": td.classList.add("won"); break;
-        case "5": td.classList.add("lost"); break;
+        case "1": td.classList.add("lost"); break;
+        case "4": td.classList.add("draw"); break;
+        case "5": td.classList.add("won"); break;
       }
     }
   }

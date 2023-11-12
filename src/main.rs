@@ -1,4 +1,5 @@
 use regex::Regex;
+use std::cmp;
 use std::net::TcpListener;
 use std::thread::spawn;
 use tungstenite::{accept, Message};
@@ -8,12 +9,13 @@ use tungstenite::{accept, Message};
 #[derive(Debug, Clone, Copy)]
 struct Board {
     data: [[u8; 3]; 3],
+    depth: usize,
     eval: u8,
     /*
      * 0 is undecided
-     * 1 is draw
-     * 4 is win for X
-     * 5 is win for O
+     * 1 is win for other player
+     * 4 is draw
+     * 5 is win for current player
      */
 }
 
@@ -29,6 +31,7 @@ fn main() {
             let mut current = Board {
                 data: [[0; 3]; 3],
                 eval: 0,
+                depth: 0,
             };
             let regex = Regex::new(r"(\d+) (\d+)").unwrap();
             loop {
@@ -52,9 +55,9 @@ fn main() {
                 }
                 let (x, y) = coord[0];
                 let value = if current.data.iter().fold(0, |curr, row| {
-                    curr + row
-                        .iter()
-                        .fold(0, |current, elem| current + if *elem != 0 { 1 } else { 0 })
+                    curr + row.iter().fold(0, |current, elem| {
+                        current + if *elem == 2 || *elem == 3 { 1 } else { 0 }
+                    })
                 }) & 1
                     == 0
                 {
@@ -69,30 +72,26 @@ fn main() {
                 let mut response = String::from("");
                 if check_win(current.data, (x, y), value) {
                     response = format!(",{value} won\n");
-                    current.eval = value + 2;
+                    current.eval = 5;
                 }
                 current.data[x][y] = value;
-                let mut copy = current.data.clone();
-                // for horizontal in current.data.iter_mut() {
+                let copy = current.clone();
+
                 for i in 0..current.data.len() {
                     let horizontal = &mut current.data[i];
-                    // for location in horizontal.iter_mut() {
                     for j in 0..horizontal.len() {
                         let location = &mut horizontal[j];
                         if !(*location == 2 || *location == 3) {
-                            let loc = *location;
-                            copy[i][j] = 5 - value;
-                            eprintln!("{:?}", copy);
-                            let index = (*guard)
-                                .iter()
-                                .position(|board| -> bool { board.data == copy });
-                            copy[i][j] = match index {
-                                Some(index) => {
-                                    (*guard)[index].eval
-                                }
-                                None => loc,
-                            };
-                            *location = copy[i][j];
+                            let mut localcopy = copy.clone();
+                            localcopy.data[i][j] = 5 - value;
+                            // println!("{:?}", localcopy.data);
+
+                            if check_win(localcopy.data, (i, j), 5 - value) {
+                                *location = 5;
+                            } else {
+                                println!("{:?}\n{:?}\n{value}", *guard, localcopy);
+                                *location = flip(evaluate(&mut *guard, localcopy, 2, 5 - value));
+                            }
                         }
                         response = format!("{response}{location},")
                     }
@@ -106,11 +105,57 @@ fn main() {
     }
 }
 
+fn evaluate(boards: &mut Vec<Board>, mut board: Board, depth: usize, curr: u8) -> u8 {
+    let index = boards
+        .iter()
+        .position(|localboard| -> bool { localboard.data == board.data });
+    if match index {
+        Some(index) => boards[index].depth >= depth || boards[index].eval != 0,
+        None => false,
+    } {
+        return match index {
+            Some(index) => boards[index].eval,
+            None => 0,
+        };
+    }
+    if depth == 0 {
+        return 0;
+    }
+    let copy = board.clone();
+    let mut eval = 0;
+    for i in 0..board.data.len() {
+        let horizontal = &mut board.data[i];
+        for j in 0..horizontal.len() {
+            let location = &mut horizontal[j];
+            if !(*location == 2 || *location == 3) {
+                let mut localcopy = copy.clone();
+                localcopy.data[i][j] = 5 - curr;
+                if check_win(localcopy.data, (i, j), 5 - curr) {
+                    return 5;
+                }
+                let evaluation = flip(evaluate(boards, localcopy, depth - 1, 5 - curr));
+                eval = cmp::max(evaluation, eval);
+            }
+        }
+    }
+    eval
+}
+fn flip(eval: u8) -> u8 {
+    match eval {
+        1 => 5, //won
+        4 => 4, //draw
+        5 => 1, //lost
+        _ => 0, //undecided
+    }
+}
 fn moveable(data: [[u8; 3]; 3], (x, y): (usize, usize)) -> bool {
     !((data[x][y] == 2) || (data[x][y] == 3))
 }
 
 fn check_win(data: [[u8; 3]; 3], (x, y): (usize, usize), current: u8) -> bool {
+    if data[x][y] == 5 - current {
+        return false;
+    }
     //horizontal detection
     let mut count: u8 = 0;
     for i in 1..=3 {
