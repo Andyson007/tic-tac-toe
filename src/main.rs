@@ -9,7 +9,6 @@ use tungstenite::{accept, Message};
 #[derive(Debug, Clone, Copy)]
 struct Board {
     data: [[u8; 3]; 3],
-    depth: usize,
     eval: u8,
     /*
      * 0 is undecided
@@ -20,26 +19,22 @@ struct Board {
 }
 
 fn main() {
-    let var: Vec<Board> = vec![];
-    let mutex = std::sync::Mutex::new(var);
-    let arc = std::sync::Arc::new(mutex);
     let server = TcpListener::bind("127.0.0.1:9001").unwrap();
     for stream in server.incoming() {
-        let arc = arc.clone();
         spawn(move || {
             let mut websocket = accept(stream.unwrap()).unwrap();
             let mut current = Board {
                 data: [[0; 3]; 3],
                 eval: 0,
-                depth: 0,
             };
             let regex = Regex::new(r"(\d+) (\d+)").unwrap();
+            let response = format!("{}", generate_board(current, 9, 2));
+            websocket.send(Message::text(response.to_string())).unwrap();
             loop {
                 let msg = websocket.read().unwrap();
                 if !(msg.is_binary() || msg.is_text()) {
                     continue;
                 }
-                let mut guard = arc.lock().unwrap();
                 let coord: Vec<(usize, usize)> = regex
                     .captures_iter(msg.to_string().as_str())
                     .map(|caps| {
@@ -75,71 +70,71 @@ fn main() {
                     current.eval = 5;
                 }
                 current.data[x][y] = value;
-                let copy = current.clone();
-
-                for i in 0..current.data.len() {
-                    let horizontal = &mut current.data[i];
-                    for j in 0..horizontal.len() {
-                        let location = &mut horizontal[j];
-                        if !(*location == 2 || *location == 3) {
-                            let mut localcopy = copy.clone();
-                            localcopy.data[i][j] = 5 - value;
-                            // println!("{:?}", localcopy.data);
-
-                            if check_win(localcopy.data, (i, j), 5 - value) {
-                                *location = 5;
-                            } else {
-                                println!("{:?}\n{:?}\n{value}", *guard, localcopy);
-                                *location = flip(evaluate(&mut *guard, localcopy, 2, 5 - value));
-                            }
-                        }
-                        response = format!("{response}{location},")
-                    }
-                    response = format!("{response}\n");
-                }
-                response.pop();
+                response = format!("{response}{}", generate_board(current, 8, value));
                 websocket.send(Message::text(response.to_string())).unwrap();
-                (*guard).push(current.clone());
             }
         });
     }
 }
+fn generate_board(mut current: Board, depth: usize, value: u8) -> String {
+    let mut response = String::new();
+    let copy = current.clone();
 
-fn evaluate(boards: &mut Vec<Board>, mut board: Board, depth: usize, curr: u8) -> u8 {
-    let index = boards
-        .iter()
-        .position(|localboard| -> bool { localboard.data == board.data });
-    if match index {
-        Some(index) => boards[index].depth >= depth || boards[index].eval != 0,
-        None => false,
-    } {
-        return match index {
-            Some(index) => boards[index].eval,
-            None => 0,
-        };
+    for i in 0..current.data.len() {
+        let horizontal = &mut current.data[i];
+        for j in 0..horizontal.len() {
+            let location = &mut horizontal[j];
+            if !(*location == 2 || *location == 3) {
+                let mut localcopy = copy.clone();
+                localcopy.data[i][j] = 5 - value;
+
+                if check_win(localcopy.data, (i, j), 5 - value) {
+                    *location = 5;
+                } else {
+                    *location = flip(evaluate(localcopy, depth, 5 - value));
+                }
+            }
+            response = format!("{response}{location},")
+        }
+        response = format!("{response}\n");
     }
+    response.pop();
+    response
+}
+// fn generateResponse(board: Board, depth: usize, value: u8) ->String {
+//
+// }
+
+fn evaluate(mut board: Board, depth: usize, curr: u8) -> u8 {
     if depth == 0 {
         return 0;
     }
     let copy = board.clone();
     let mut eval = 0;
+    let mut draw = true;
     for i in 0..board.data.len() {
         let horizontal = &mut board.data[i];
         for j in 0..horizontal.len() {
             let location = &mut horizontal[j];
             if !(*location == 2 || *location == 3) {
+                draw = false;
                 let mut localcopy = copy.clone();
                 localcopy.data[i][j] = 5 - curr;
                 if check_win(localcopy.data, (i, j), 5 - curr) {
                     return 5;
                 }
-                let evaluation = flip(evaluate(boards, localcopy, depth - 1, 5 - curr));
+                let evaluation = flip(evaluate(localcopy, depth - 1, 5 - curr));
                 eval = cmp::max(evaluation, eval);
             }
         }
     }
-    eval
+    if draw {
+        4
+    } else {
+        eval
+    }
 }
+
 fn flip(eval: u8) -> u8 {
     match eval {
         1 => 5, //won
@@ -148,6 +143,7 @@ fn flip(eval: u8) -> u8 {
         _ => 0, //undecided
     }
 }
+
 fn moveable(data: [[u8; 3]; 3], (x, y): (usize, usize)) -> bool {
     !((data[x][y] == 2) || (data[x][y] == 3))
 }
