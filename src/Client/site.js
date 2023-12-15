@@ -1,4 +1,5 @@
 const ws = new WebSocket("ws://127.0.0.1:9001");
+
 const board = document.getElementById("board");
 const size = 3;
 

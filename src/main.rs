@@ -9,32 +9,28 @@ use tungstenite::{accept, Message};
 #[derive(Debug, Clone, Copy)]
 struct Board {
     data: [[u8; 3]; 3],
-    eval: u8,
-    /*
-     * 0 is undecided
-     * 1 is win for other player
-     * 4 is draw
-     * 5 is win for current player
-     */
 }
 
 fn main() {
-    let server = TcpListener::bind("127.0.0.1:9001").unwrap();
+    let server = TcpListener::bind("0.0.0.0:9001").unwrap();
     for stream in server.incoming() {
         spawn(move || {
+            println!("Client connected");
             let mut websocket = accept(stream.unwrap()).unwrap();
-            let mut current = Board {
-                data: [[0; 3]; 3],
-                eval: 0,
-            };
+            let mut current = Board { data: [[0; 3]; 3] };
             let regex = Regex::new(r"(\d+) (\d+)").unwrap();
             let response = format!("{}", generate_board(current, 9, 2));
             websocket.send(Message::text(response.to_string())).unwrap();
             loop {
-                let msg = websocket.read().unwrap();
+                let msg = websocket.read();
+                if msg.is_err() {
+                  break;
+                }
+                let msg = msg.unwrap();
                 if !(msg.is_binary() || msg.is_text()) {
                     continue;
                 }
+                println!("{msg}");
                 let coord: Vec<(usize, usize)> = regex
                     .captures_iter(msg.to_string().as_str())
                     .map(|caps| {
@@ -67,12 +63,12 @@ fn main() {
                 let mut response = String::from("");
                 if check_win(current.data, (x, y), value) {
                     response = format!(",{value} won\n");
-                    current.eval = 5;
                 }
                 current.data[x][y] = value;
                 response = format!("{response}{}", generate_board(current, 8, value));
                 websocket.send(Message::text(response.to_string())).unwrap();
             }
+            println!("Client disconnected");
         });
     }
 }
@@ -101,9 +97,6 @@ fn generate_board(mut current: Board, depth: usize, value: u8) -> String {
     response.pop();
     response
 }
-// fn generateResponse(board: Board, depth: usize, value: u8) ->String {
-//
-// }
 
 fn evaluate(mut board: Board, depth: usize, curr: u8) -> u8 {
     if depth == 0 {
